@@ -5,215 +5,261 @@ import plotly.graph_objects as go
 from PIL import Image
 import datetime
 
-# =====================================================
+# ==========================================================
 # CONFIGURAÇÃO
-# =====================================================
+# ==========================================================
 
 st.set_page_config(page_title="Report Mensal Erbe - Jurídico", layout="wide")
 
 st.markdown("""
-    <style>
-        .block-container { padding-top: 1rem; }
-    </style>
+<style>
+.block-container {padding-top:1rem;}
+</style>
 """, unsafe_allow_html=True)
 
-# =====================================================
-# HEADER COM LOGO (HORIZONTAL LONGA)
-# =====================================================
+# ==========================================================
+# HEADER
+# ==========================================================
 
-LOGO_WIDTH = 500  # ajuste aqui se quiser maior ou menor
+LOGO_WIDTH = 500
 
 logo = Image.open("logo.png")
 
-col_logo, col_titulo = st.columns([4,5])
+col_logo, col_titulo = st.columns([2,5])
 
 with col_logo:
     st.image(logo, width=LOGO_WIDTH)
 
 with col_titulo:
-    st.markdown(
-        """
-        <div style='display:flex; align-items:center; height:100%;'>
-            <h1 style='font-weight:600; margin:0;'>
-                Report Mensal Erbe - Jurídico
-            </h1>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    st.markdown("""
+    <div style='display:flex; align-items:center; height:100%;'>
+        <h1 style='margin:0'>Report Mensal Erbe - Jurídico</h1>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.divider()
 
-# =====================================================
-# FILTRO VISUAL
-# =====================================================
+# ==========================================================
+# FILTRO DE PERÍODO
+# ==========================================================
 
-col1, col2, col3 = st.columns([2,2,1])
+col1,col2,col3 = st.columns([2,2,1])
 
 with col1:
-    st.date_input("Data Início", value=datetime.date(2024, 4, 1))
+    data_inicio = st.date_input("Data início", value=datetime.date(2024,1,1))
 
 with col2:
-    st.date_input("Data Fim", value=datetime.date(2024, 4, 30))
+    data_fim = st.date_input("Data fim", value=datetime.date.today())
 
 with col3:
     st.write("")
     st.write("")
-    st.button("Filtrar", use_container_width=True)
+    filtrar = st.button("Filtrar",use_container_width=True)
+
+# ==========================================================
+# CARREGAR BASES
+# ==========================================================
+
+entradas = pd.read_csv("Base_Entradas.csv")
+settled = pd.read_csv("Base_Settled.csv")
+relatorio = pd.read_csv("relatorio_tratado.csv")
+
+# converter datas
+entradas["Data Cálculo"] = pd.to_datetime(entradas["Data Cálculo"])
+settled["Data Cálculo"] = pd.to_datetime(settled["Data Cálculo"])
+
+# ==========================================================
+# REMOVER DUPLICADOS
+# ==========================================================
+
+entradas = entradas.sort_values("Data Cálculo").drop_duplicates("Pasta",keep="last")
+settled = settled.sort_values("Data Cálculo").drop_duplicates("Pasta",keep="last")
+relatorio = relatorio.drop_duplicates("Pasta")
+
+# ==========================================================
+# FILTRO DE DATA
+# ==========================================================
+
+entradas_filtrado = entradas[
+(entradas["Data Cálculo"]>=pd.to_datetime(data_inicio)) &
+(entradas["Data Cálculo"]<=pd.to_datetime(data_fim))
+]
+
+settled_filtrado = settled[
+(settled["Data Cálculo"]>=pd.to_datetime(data_inicio)) &
+(settled["Data Cálculo"]<=pd.to_datetime(data_fim))
+]
+
+# ==========================================================
+# MÉTRICAS
+# ==========================================================
+
+MES_ANTERIOR = "*****"  # preencher manualmente
+
+entradas_total = entradas_filtrado["Pasta"].count()
+
+baixa_prov = settled_filtrado[
+settled_filtrado["Status"]=="BAIXA PROVISORIA"
+]["Pasta"].count()
+
+encerrados = settled_filtrado[
+settled_filtrado["Status"]=="ENCERRADOS"
+]["Pasta"].count()
+
+mes_atual = relatorio["Pasta"].nunique()
+
+col1,col2,col3,col4,col5 = st.columns(5)
+
+col1.metric("Mês Anterior",MES_ANTERIOR)
+col2.metric("Entradas",entradas_total)
+col3.metric("Baixa Provisória",baixa_prov)
+col4.metric("Encerrados",encerrados)
+col5.metric("Mês Atual",mes_atual)
 
 st.divider()
 
-# =====================================================
-# MÉTRICAS MOCKADAS
-# =====================================================
+# ==========================================================
+# GRÁFICO ENTRADAS POR TIPO
+# ==========================================================
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col_g1,col_g2 = st.columns(2)
 
-col1.metric("Mês Anterior", "8.450")
-col2.metric("Entradas", "1.200")
-col3.metric("Baixa Provisória", "950")
-col4.metric("Encerrados", "600")
-col5.metric("Mês Atual", "8.100")
+with col_g1:
 
-st.divider()
+    st.subheader("Entradas do mês")
 
-# =====================================================
-# GRÁFICOS SUPERIORES
-# =====================================================
+    graf_entradas = entradas_filtrado.groupby("Macro Assunto")["Pasta"].count().reset_index()
 
-col_graf1, col_graf2 = st.columns(2)
+    fig1 = px.bar(
+        graf_entradas,
+        x="Macro Assunto",
+        y="Pasta",
+        text="Pasta"
+    )
 
-with col_graf1:
-    st.subheader("Entradas do Mês")
-
-    entradas_tipos = pd.DataFrame({
-        "Tipo": ["Cível", "Tax", "Labor", "Property Tax", "FAR", "Construction", "Delay"],
-        "Quantidade": [300, 200, 150, 120, 180, 140, 110]
-    })
-
-    fig1 = px.bar(entradas_tipos, x="Tipo", y="Quantidade", text="Quantidade")
     fig1.update_layout(showlegend=False)
-    st.plotly_chart(fig1, use_container_width=True)
 
-with col_graf2:
+    st.plotly_chart(fig1,use_container_width=True)
+
+# ==========================================================
+# GRÁFICO SAÍDAS
+# ==========================================================
+
+with col_g2:
+
     st.subheader("Saídas e Baixas")
 
-    saidas = pd.DataFrame({
-        "Categoria": ["Baixa Provisória"]*3 + ["Encerrados"]*3,
-        "Resultado": ["Lost","Settled","Won"]*2,
-        "Quantidade": [400,300,250,250,200,150]
-    })
+    saidas = settled_filtrado.groupby(["Status","Macro Encerramento"])["Pasta"].count().reset_index()
 
-    cores = {
-        "Lost": "#8B0000",
-        "Settled": "#FE8C40",
-        "Won": "#E8E118"
-    }
+    fig2 = px.bar(
+        saidas,
+        x="Status",
+        y="Pasta",
+        color="Macro Encerramento",
+        barmode="stack"
+    )
 
-    fig2 = go.Figure()
-
-    for r in ["Lost","Settled","Won"]:
-        df_temp = saidas[saidas["Resultado"] == r]
-        fig2.add_trace(go.Bar(
-            x=df_temp["Categoria"],
-            y=df_temp["Quantidade"],
-            name=r,
-            marker_color=cores[r]
-        ))
-
-    fig2.update_layout(barmode="stack")
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2,use_container_width=True)
 
 st.divider()
 
-# =====================================================
-# GRÁFICO FINAL
-# =====================================================
+# ==========================================================
+# GRÁFICO ENTRADAS X SAÍDAS
+# ==========================================================
 
-st.subheader("Entradas x Saídas / Baixas")
+st.subheader("Entradas x Saídas")
 
-serie = pd.DataFrame({
-    "Mês": ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago"],
-    "Entradas": [600,900,1300,1000,500,800,950,1200],
-    "Saídas": [1000,700,1000,600,750,1100,850,980]
-})
+entradas_filtrado["Mes"] = entradas_filtrado["Data Cálculo"].dt.month
+settled_filtrado["Mes"] = settled_filtrado["Data Cálculo"].dt.month
+
+entradas_mes = entradas_filtrado.groupby("Mes")["Pasta"].count()
+saidas_mes = settled_filtrado.groupby("Mes")["Pasta"].count()
+
+meses = range(1,13)
+
+entradas_lista = [entradas_mes.get(m,0) for m in meses]
+saidas_lista = [saidas_mes.get(m,0) for m in meses]
 
 fig3 = go.Figure()
-fig3.add_trace(go.Scatter(x=serie["Mês"], y=serie["Entradas"], mode="lines+markers", name="Entradas"))
-fig3.add_trace(go.Scatter(x=serie["Mês"], y=serie["Saídas"], mode="lines+markers", name="Saídas"))
 
-st.plotly_chart(fig3, use_container_width=True)
+fig3.add_trace(go.Scatter(
+x=list(meses),
+y=entradas_lista,
+mode="lines+markers",
+name="Entradas"
+))
+
+fig3.add_trace(go.Scatter(
+x=list(meses),
+y=saidas_lista,
+mode="lines+markers",
+name="Saídas"
+))
+
+fig3.update_layout(
+xaxis_title="Mês",
+yaxis_title="Quantidade"
+)
+
+st.plotly_chart(fig3,use_container_width=True)
 
 st.divider()
 
-# =====================================================
-# PAINEL WIN / LOST
-# =====================================================
+# ==========================================================
+# TABELA FINAL EXECUTIVA
+# ==========================================================
 
-with st.container():
+st.subheader("Baixa provisória e encerrados")
 
-    st.markdown("""
-        <div style="
-            background-color:#ffffff;
-            padding:25px;
-            border-radius:12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
-        ">
-    """, unsafe_allow_html=True)
+dados = []
 
-    st.markdown("### Baixa provisória e encerrados")
+for status in ["Won","Settled","Lost"]:
 
-    dados = pd.DataFrame({
-        "Status": ["Won", "Settled", "Lost", "Total"],
-        "Quantidade de processos": [250, 260, 90, ""],
-        "BP Atualizado": ["R$ 0,55M", "R$ 0,86M", "R$ 0,70M", "R$ 2,13M"],
-        "Fcx Real": ["R$ 0", "R$ 0", "R$ 0,70M", "R$ 1,25M"],
-        "Saving": ["45%", "0,33%", "0%", "0,83M"]
+    df = settled_filtrado[
+    settled_filtrado["Macro Encerramento"]==status
+    ]
+
+    qtd = df["Pasta"].count()
+
+    bp = df["Valor Pedido Objeto Corrigido"].sum()
+
+    fcx = df["Valor integral do Acordo/Condenação"].sum()
+
+    saving = 0
+    if bp != 0:
+        saving = (bp-fcx)/bp
+
+    dados.append({
+        "Status":status,
+        "Quantidade de processos":qtd,
+        "BP Atualizado":bp,
+        "Fcx Real":fcx,
+        "Saving":saving
     })
 
-    def icone(status):
-        return {"Won":"✅","Settled":"🤝","Lost":"❌"}.get(status,"")
+df_tabela = pd.DataFrame(dados)
 
-    dados.insert(0,"",dados["Status"].apply(icone))
+bp_total = df_tabela["BP Atualizado"].sum()
+fcx_total = df_tabela["Fcx Real"].sum()
 
-    st.markdown("""
-        <style>
-        table { width:100%; border-collapse:collapse; font-size:15px; }
-        thead tr { background:#e7d2c3; font-weight:600; }
-        th,td { padding:12px; border:none; }
-        tbody tr { border-bottom:1px solid #f0f0f0; }
-        .saving-total { background:#c6e6c3; font-weight:600; }
-        .total-row { font-weight:600; }
-        </style>
-    """, unsafe_allow_html=True)
+total = {
+"Status":"Total",
+"Quantidade de processos":df_tabela["Quantidade de processos"].sum(),
+"BP Atualizado":bp_total,
+"Fcx Real":fcx_total,
+"Saving":(bp_total-fcx_total)/bp_total if bp_total !=0 else 0
+}
 
-    html = """
-    <table>
-        <thead>
-            <tr>
-                <th></th>
-                <th>Quantidade de processos</th>
-                <th>BP Atualizado</th>
-                <th>Fcx Real</th>
-                <th>Saving</th>
-            </tr>
-        </thead>
-        <tbody>
-    """
+df_tabela = pd.concat([df_tabela,pd.DataFrame([total])])
 
-    for _, row in dados.iterrows():
-        is_total = row["Status"] == "Total"
-        html += f"<tr class='{'total-row' if is_total else ''}'>"
+def format_moeda(valor):
+    return f"R$ {valor/1000000:.2f}M"
 
-        for col in dados.columns:
-            if is_total and col == "Saving":
-                html += f"<td class='saving-total'>{row[col]}</td>"
-            else:
-                html += f"<td>{row[col]}</td>"
+def format_percent(v):
+    return f"{v*100:.1f}%"
 
-        html += "</tr>"
+df_tabela["BP Atualizado"] = df_tabela["BP Atualizado"].apply(format_moeda)
+df_tabela["Fcx Real"] = df_tabela["Fcx Real"].apply(format_moeda)
+df_tabela["Saving"] = df_tabela["Saving"].apply(format_percent)
 
-    html += "</tbody></table>"
-
-    st.markdown(html, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+st.dataframe(df_tabela,use_container_width=True)
