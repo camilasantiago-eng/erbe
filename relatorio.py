@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from PIL import Image
 import datetime
+import os
 
 # ==========================================================
 # CONFIGURAÇÃO
@@ -57,16 +58,44 @@ with col3:
     filtrar = st.button("Filtrar",use_container_width=True)
 
 # ==========================================================
-# CARREGAR BASES
+# CARREGAR BASES (COM CACHE)
 # ==========================================================
 
-entradas = pd.read_csv("Base_Entradas.csv")
-settled = pd.read_csv("Base_Settled.csv")
-relatorio = pd.read_csv("relatorio_tratado.csv")
+@st.cache_data
+def carregar_bases():
+    entradas = pd.read_excel("Entradas_Analise.xlsx")
+    settled = pd.read_excel("SETTLED.xlsx")
+    relatorio = pd.read_excel("relatorio_tratado.xlsx")
+    return entradas, settled, relatorio
 
-# converter datas
-entradas["Data Cálculo"] = pd.to_datetime(entradas["Data Cálculo"])
-settled["Data Cálculo"] = pd.to_datetime(settled["Data Cálculo"])
+entradas, settled, relatorio = carregar_bases()
+
+# ==========================================================
+# LIMPEZA DE COLUNAS
+# ==========================================================
+
+entradas.columns = entradas.columns.astype(str).str.strip()
+settled.columns = settled.columns.astype(str).str.strip()
+relatorio.columns = relatorio.columns.astype(str).str.strip()
+
+# ==========================================================
+# TRATAMENTO DE DATAS
+# ==========================================================
+
+entradas["Data Cálculo"] = pd.to_datetime(entradas["Data Cálculo"], errors="coerce")
+settled["Data Cálculo"] = pd.to_datetime(settled["Data Cálculo"], errors="coerce")
+
+# ==========================================================
+# PADRONIZAR STATUS
+# ==========================================================
+
+settled["Status"] = settled["Status"].astype(str).str.upper().str.strip()
+
+# ==========================================================
+# GARANTIR MACRO ASSUNTO
+# ==========================================================
+
+entradas["Macro Assunto"] = entradas["Macro Assunto"].fillna("Não classificado")
 
 # ==========================================================
 # REMOVER DUPLICADOS
@@ -83,18 +112,18 @@ relatorio = relatorio.drop_duplicates("Pasta")
 entradas_filtrado = entradas[
 (entradas["Data Cálculo"]>=pd.to_datetime(data_inicio)) &
 (entradas["Data Cálculo"]<=pd.to_datetime(data_fim))
-]
+].copy()
 
 settled_filtrado = settled[
 (settled["Data Cálculo"]>=pd.to_datetime(data_inicio)) &
 (settled["Data Cálculo"]<=pd.to_datetime(data_fim))
-]
+].copy()
 
 # ==========================================================
 # MÉTRICAS
 # ==========================================================
 
-MES_ANTERIOR = "*****"  # preencher manualmente
+MES_ANTERIOR = "*****"
 
 entradas_total = entradas_filtrado["Pasta"].count()
 
@@ -225,9 +254,7 @@ for status in ["Won","Settled","Lost"]:
 
     fcx = df["Valor integral do Acordo/Condenação"].sum()
 
-    saving = 0
-    if bp != 0:
-        saving = (bp-fcx)/bp
+    saving = (bp-fcx)/bp if bp>0 else 0
 
     dados.append({
         "Status":status,
@@ -247,7 +274,7 @@ total = {
 "Quantidade de processos":df_tabela["Quantidade de processos"].sum(),
 "BP Atualizado":bp_total,
 "Fcx Real":fcx_total,
-"Saving":(bp_total-fcx_total)/bp_total if bp_total !=0 else 0
+"Saving":(bp_total-fcx_total)/bp_total if bp_total>0 else 0
 }
 
 df_tabela = pd.concat([df_tabela,pd.DataFrame([total])])
@@ -263,3 +290,32 @@ df_tabela["Fcx Real"] = df_tabela["Fcx Real"].apply(format_moeda)
 df_tabela["Saving"] = df_tabela["Saving"].apply(format_percent)
 
 st.dataframe(df_tabela,use_container_width=True)
+
+# ==========================================================
+# ASSUMPTIONS
+# ==========================================================
+
+st.divider()
+st.subheader("Assumptions")
+
+if os.path.exists("ASSUMPTIONS_26.xlsx"):
+
+    assumptions = pd.read_excel("ASSUMPTIONS_26.xlsx")
+
+    assumptions.columns = assumptions.columns.astype(str).str.strip()
+
+    def format_m(valor):
+        try:
+            return f"R$ {float(valor)/1000000:.2f}M"
+        except:
+            return valor
+
+    for col in ["Cálculo","Fixo","Soma"]:
+        if col in assumptions.columns:
+            assumptions[col] = assumptions[col].apply(format_m)
+
+    st.dataframe(assumptions,use_container_width=True)
+
+else:
+
+    st.info("Arquivo ASSUMPTIONS_26.xlsx não encontrado.")
